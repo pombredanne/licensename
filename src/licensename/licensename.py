@@ -13,10 +13,9 @@ mit
 
 """
 
-import argparse
-import sys
 import re
-
+import sys
+import logging
 
 from unidecode import unidecode
 from licensename import __version__
@@ -26,17 +25,7 @@ from licensename.known_licenses import LICENSE_TREE
 __author__ = "Julien Palard"
 __copyright__ = "Julien Palard"
 __license__ = "mit"
-
-
-SPACES = r'(?:[ \t\f\v\u00A0\u2028])'
-UNORDERED_LIST = r'(?:[*\u2022+])'
-ORDERED_LIST = r'(?:[0-9]\.)'
-BULLET_MARKER = r'(?:{unordered}|{ordered})'.format(
-    ordered=ORDERED_LIST,
-    unordered=UNORDERED_LIST)
-BULLET_ITEM = r'(?:{spaces}*{bullet_marker}{spaces}+)'.format(
-    bullet_marker=BULLET_MARKER,
-    spaces=SPACES)
+logger = logging.getLogger(__name__)
 
 
 def line_match_pattern(line, patterns):
@@ -44,6 +33,7 @@ def line_match_pattern(line, patterns):
         return patterns
     for pattern, subpatterns in patterns:
         if pattern in line:
+            logger.info("Matched: %s", repr(pattern))
             found = line_match_pattern(line, subpatterns)
             if found:
                 return found
@@ -65,24 +55,10 @@ def canonicalize(license_text):
     return simplified_text
 
 
-def from_lines(license_lines):
-    """Parse a license text, returns a license name.
-    """
-    current_patterns = LICENSE_TREE
-    for line in license_lines:
-        if not line:
-            continue
-        remaining_patterns = line_match_pattern(line, current_patterns)
-        if remaining_patterns:
-            current_patterns = remaining_patterns
-            if isinstance(current_patterns, str):
-                return current_patterns
-
-
 def from_text(license_text):
     """Parse a license text, returns a license name.
     """
-    return from_lines(canonicalize(license_text).split('\n'))
+    return line_match_pattern(canonicalize(license_text), LICENSE_TREE)
 
 
 def from_file(license_path):
@@ -101,6 +77,7 @@ def parse_args(args):
     Returns:
       :obj:`argparse.Namespace`: command line parameters namespace
     """
+    import argparse
     parser = argparse.ArgumentParser(
         description="Find name of a given license file.")
     parser.add_argument(
@@ -108,14 +85,28 @@ def parse_args(args):
         action='version',
         version='licensename {ver}'.format(ver=__version__))
     parser.add_argument(
-        '--pretty-print',
-        action='store_true',
-        help="Pretty print license file.")
+        '-v',
+        '--verbose',
+        dest="loglevel",
+        help="set loglevel to INFO",
+        action='store_const',
+        const=logging.INFO)
     parser.add_argument(
         dest="license_path",
         help="Path of a license file",
         metavar="LICENSE")
     return parser.parse_args(args)
+
+
+def setup_logging(loglevel):
+    """Setup basic logging
+
+    Args:
+      loglevel (int): minimum loglevel for emitting messages
+    """
+    logformat = "[%(asctime)s] %(levelname)s:%(name)s:%(message)s"
+    logging.basicConfig(level=loglevel, stream=sys.stdout,
+                        format=logformat, datefmt="%Y-%m-%d %H:%M:%S")
 
 
 def main(args):
@@ -125,10 +116,7 @@ def main(args):
       args ([str]): command line parameter list
     """
     args = parse_args(args)
-    if args.pretty_print:
-        with open(args.license_path) as license_file:
-            print(canonicalize(license_file.read()))
-            return
+    setup_logging(args.loglevel)
     print(from_file(args.license_path))
 
 
